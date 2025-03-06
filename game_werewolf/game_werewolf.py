@@ -10,7 +10,7 @@ from kirara_ai.llm.format.request import LLMChatRequest
 from kirara_ai.llm.format.message import LLMChatMessage
 import re
 class Role(Enum):
-    WEREWOLF = ("狼人", "夜晚可以选择一名玩家进行袭击,并和你的狼队友一起投票,可以通过袭击自己来骗解药。")
+    WEREWOLF = ("狼人", "夜晚可以选择一名玩家进行袭击,并和你的狼队友一起投票,可以通过袭击自己来骗解药。不要暴露自己和狼队友的身份。")
     VILLAGER = ("村民", "白天参与讨论和投票，试图找出狼人。")
     WITCH = ("女巫", "夜晚可以选择使用解药拯救一名玩家或使用毒药杀死一名玩家,一般都在第一天使用解药,注意同守同救则被拯救玩家直接死亡，但是偶尔也要小心对方是狼人自刀骗解药。")
     SEER = ("预言家", "夜晚可以查验一名玩家的身份,没发现狼人前不会轻易透露身份。")
@@ -46,7 +46,7 @@ class Player:
         return int(match.group()) if match else None  # 返回数字或 None
     def requestVote(self, prompt: str, valid_targets: List[int]) -> int:
         # 使用 LLM 模拟玩家的投票
-        message = f"已知信息{self.chatLog}\n本次任务:{prompt}，要求回复玩家编号，不用任何说明\n有效目标: {valid_targets}\n请投票（输入玩家编号）:"
+        message = f"已知信息{self.chatLog}\n本次任务:{prompt}，要求回复玩家编号，不用任何说明\n有效目标: {valid_targets}\n请投票（输入玩家编号,-1为弃票）:"
         logger.debug(message)
 
         for attempt in range(3):  # Retry up to 3 times
@@ -177,7 +177,7 @@ class GameWerewolf:
             if player.role == Role.WITCH:
                 player.hasSavePotion = True
                 player.hasKillPotion = True
-            player.updateSystem(f"你的身份是{roles[i]._value_}，编号是{player.number}, 当前玩家身份有{roleNames}，身份描述：{roles[i].description}")
+            player.updateSystem(f"你的身份是{roles[i]._value_}，你的编号是{player.number}，你的身份描述：{roles[i].description}, 当前玩家身份有{roleNames}")
             self.chatAllLog.append(f"{player.number}号玩家的身份是{roles[i]._value_}")
 
         # 公告狼队友的信息
@@ -243,7 +243,7 @@ class GameWerewolf:
         logger.debug(f"daytime_voting,{self.process},{self.current_player_index+1}, {self.human_player_index+1} ,{self.speech}")
         eliminated = self.daytime_voting()
         if not eliminated:
-            return "请选择要放逐的玩家（输入玩家编号）"
+            return "请选择要放逐的玩家（输入玩家编号，-1 为弃票）"
         if eliminated and isinstance(eliminated,int):
             logger.debug(f"execute_player,{self.process},{self.current_player_index+1}, {self.human_player_index+1} ,{self.speech}")
             execute_player = self.execute_player(eliminated)
@@ -329,7 +329,7 @@ class GameWerewolf:
                     self.chatAllLog.append(f"{witch.number}使用了解药拯救玩家 {attack_target}")
                     self.process = 5
                     if target_player.protected:
-                        target_player.alive = True
+                        target_player.alive = False
                         self.chatAllLog.append(f"触发同守同救，玩家 {attack_target}立即死亡")
                 else:
                     self.process = 4
@@ -348,7 +348,7 @@ class GameWerewolf:
                 if witch.number == self.human_player_index+1 and not self.speech:
                     self.current_player_index = witch.number - 1
                     return f"请选择要毒杀的玩家（-1 表示不使用）"
-                target = witch.requestVote("当前第{self.day}天,请选择要毒杀的玩家（-1 表示不使用，第一天一般不使用）", valid_targets=[p.number for p in self.players if p.alive and p.number != witch.number] + [-1]) if witch.number != self.human_player_index+1 else self.speech
+                target = witch.requestVote(f"当前第{self.day}天,请选择要毒杀的玩家（-1 表示不使用，第一天一般不使用）", valid_targets=[p.number for p in self.players if p.alive and p.number != witch.number] + [-1]) if witch.number != self.human_player_index+1 else self.speech
                 self.speech = None
                 if int(target) != -1:
                     self.get_player(int(target)).alive = False
@@ -378,6 +378,7 @@ class GameWerewolf:
                     self.chatAllLog.append(f"{seer.number}查验了玩家{target} 的身份是：{role_info._value_}")
             self.process = 6
             self.current_player_index = 0
+            self.broadcast(f"---第{self.day}天晚上已结束---")
         return True
 
     def daytime_discussion(self):
@@ -458,18 +459,24 @@ class GameWerewolf:
     def execute_player(self, number):
         if self.process == 8:
             player = self.get_player(number)
-            if player :
+            if player:
                 player.alive = False
+                votes = []
+                for index, vote in self.votes.items():
+                    votes.append(f"{index}投{vote}")
+                votesStr = ",".join(votes)
+                self.broadcast(f"玩家 {number} 被放逐,票型:{votesStr}")
                 if self.check_win():
                     return True
-                self.broadcast(f"玩家 {number} 被放逐,票型:{self.votes}")
-                if player.number == self.human_player_index+1 and not self.speech:
+
+                if player.number == self.human_player_index + 1 and not self.speech:
                     self.execute_player_num = number
                     return False
-                last_words = player.requestSpeech("当前第{self.day}天,请发表遗言(不要透露狼队友身份)")  if player.number != self.human_player_index+1 else self.speech
+                last_words = player.requestSpeech("当前第{self.day}天,请发表遗言(不要透露狼队友身份)") if player.number != self.human_player_index + 1 else self.speech
                 self.speech = None
                 self.broadcast(f"玩家 {number} 的遗言：{last_words}")
             self.process = 1
             self.current_player_index = 0
+            self.broadcast(f"---第{self.day+1}天白天已结束---")
         return True
 
