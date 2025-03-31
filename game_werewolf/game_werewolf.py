@@ -7,12 +7,12 @@ import random
 import time
 from enum import Enum
 from kirara_ai.llm.format.request import LLMChatRequest
-from kirara_ai.llm.format.message import LLMChatMessage
+from kirara_ai.llm.format.message import LLMChatMessage,LLMChatTextContent
 import re
 class Role(Enum):
     WEREWOLF = ("狼人", "夜晚可以选择一名玩家进行袭击,并和你的狼队友一起投票,可以通过袭击自己来骗解药。不要暴露自己和狼队友的身份。")
     VILLAGER = ("村民", "白天参与讨论和投票，试图找出狼人。")
-    WITCH = ("女巫", "夜晚可以选择使用解药拯救一名玩家或使用毒药杀死一名玩家,一般都在第一天使用解药,注意同守同救则被拯救玩家直接死亡，但是偶尔也要小心对方是狼人自刀骗解药。")
+    WITCH = ("女巫", "夜晚可以选择使用解药拯救一名玩家或使用毒药杀死一名玩家,一般都在第一天使用解药（无法救自己）,注意同守同救则被拯救玩家直接死亡，但是偶尔也要小心对方是狼人自刀骗解药。")
     SEER = ("预言家", "夜晚可以查验一名玩家的身份,没发现狼人前不会轻易透露身份。")
     GUARD = ("守卫", "夜晚可以选择一名玩家进行保护，第一天一般选择不守护,优先保护神职,注意同守同救则被守护玩家直接死亡。")
 
@@ -51,9 +51,9 @@ class Player:
 
         for attempt in range(3):  # Retry up to 3 times
             try:
-                response = self.llm.chat(LLMChatRequest(messages = [LLMChatMessage(role="system", content="你是一个资深的狼人杀游戏玩家，请根据以下背景和要求进行投票"),LLMChatMessage(role="user", content=message)],model=self.model_name))
+                response = self.llm.chat(LLMChatRequest(messages = [LLMChatMessage(role="system", content=[LLMChatTextContent(text="你是一个资深的狼人杀游戏玩家，请根据以下背景和要求进行投票")]),LLMChatMessage(role="user", content=[LLMChatTextContent(text=message)])],model=self.model_name))
                 logger.debug(response)
-                content = response.choices[0].message.content.replace("\n","")
+                content = response.message.content[0].text.replace("\n","")
                 vote = self.extract_first_number(content)
                 return vote if vote in valid_targets else valid_targets[0]
             except Exception as e:
@@ -68,8 +68,8 @@ class Player:
 
         for attempt in range(3):  # Retry up to 3 times
             try:
-                response = self.llm.chat(LLMChatRequest(messages = [LLMChatMessage(role="system", content="你是一个资深的狼人杀游戏玩家(女巫属于神职阵营)，请在没把握把所有对手淘汰的情况下透露自己身份，请根据以下背景和要求直接进行简要发言，不要输出分析过程"),LLMChatMessage(role="user", content=message)],model=self.model_name))
-                return response.choices[0].message.content.replace("\n","")  # 返回 LLM 的发言内容
+                response = self.llm.chat(LLMChatRequest(messages = [LLMChatMessage(role="system", content=[LLMChatTextContent(text="你是一个资深的狼人杀游戏玩家(女巫属于神职阵营)，请在没把握把所有对手淘汰的情况下透露自己身份，请根据以下背景和要求直接进行简要发言，不要输出分析过程")]),LLMChatMessage(role="user", content=[LLMChatTextContent(text=message)])],model=self.model_name))
+                return response.message.content[0].text.replace("\n","")  # 返回 LLM 的发言内容
             except Exception as e:
                 logger.error(f"Attempt {attempt + 1} failed: {e}")
                 if attempt == 2:  # If it's the last attempt, raise the error
@@ -127,7 +127,7 @@ class GameWerewolf:
                     self.chatAllLog = []
                     return self.check_win()+"\n\n游戏总记录:\n"+info
                 if update_day and isinstance(update_day,str):
-                    info = "\n".join(self.players[self.human_player_index].chatLog)
+                    info = "\n#".join(self.players[self.human_player_index].chatLog)
                     self.players[self.human_player_index].chatLog = []
                     return f"当前游戏信息:\n{info}\n"+update_day
 

@@ -61,7 +61,8 @@ blocks:
   - type: game:game_werewolf
     name: 107f62d1-a0d6-414f-a19c-e8d87af0155b
     params:
-      model_name: windsurf/claude-3-7-sonnet
+      model_name:
+      model_name:
       werewolf_count: 2
       willager_count: 3
     position:

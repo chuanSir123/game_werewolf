@@ -36,12 +36,17 @@ class GameWerewolfBlock(Block):
       model_name: Annotated[
           Optional[str],
           ParamMeta(label="模型 ID", description="要使用的模型 ID", options_provider=model_name_options_provider),
-      ] = None,):
+      ] = None,
+      segment_messages: Annotated[
+          Optional[bool],
+          ParamMeta(label="分段发送", description="是否按换行分段发送消息"),
+      ] = False):
         super().__init__()
         self.game_instances = {}  # 初始化字典
         self.werewolf_count = werewolf_count
         self.willager_count = willager_count
         self.model_name = model_name
+        self.segment_messages = segment_messages
         self.logger = logger
 
     def execute(self, **kwargs) -> Dict[str, Any]:
@@ -79,7 +84,14 @@ class GameWerewolfBlock(Block):
                     result = game.play(speech, llm, self.model_name)
                 finally:
                     game.lock.release()  # 确保释放锁
-            message_elements.append(TextMessage(result))
+
+            if self.segment_messages and isinstance(result, str):
+                # 按换行符分割消息并逐个添加
+                for segment in result.split('\n#'):
+                    if segment.strip():  # 只添加非空消息
+                        message_elements.append(TextMessage(segment.strip()))
+            else:
+                message_elements.append(TextMessage(result))
             return {"message": IMMessage(sender=ChatSender.get_bot_sender(), message_elements=message_elements)}
         except Exception as e:
             self.logger.error(str(e))
