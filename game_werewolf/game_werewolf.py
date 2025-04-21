@@ -140,6 +140,7 @@ class GameWerewolf:
         self.players = [Player(role=None, llm=self.llm,model_name = self.model_name) for _ in range(3+self.werewolf_count+self.willager_count)]  # Create players based on player_count
         self.assign_roles()
         self.process=1
+        self.day=1
         self.votes = {}
         logger.debug(self.players)
 
@@ -159,13 +160,13 @@ class GameWerewolf:
             raise ValueError("角色分配失败：村民数量不足")
 
         roles = (
-            [Role.WEREWOLF] * werewolf_count +
-            special_roles +
-            [Role.VILLAGER] * villager_count
+                [Role.WEREWOLF] * werewolf_count +
+                special_roles +
+                [Role.VILLAGER] * villager_count
         )
         random.shuffle(roles)
         roleNames = [f"{werewolf_count}{Role.WEREWOLF._value_}",f"{villager_count}{Role.VILLAGER._value_}"
-        ,f"1{Role.SEER._value_}",f"1{Role.WITCH._value_}",f"1{Role.GUARD._value_}"]
+            ,f"1{Role.SEER._value_}",f"1{Role.WITCH._value_}",f"1{Role.GUARD._value_}"]
 
         werewolves = []  # 用于存储狼的编号
         for i, player in enumerate(self.players):
@@ -369,7 +370,7 @@ class GameWerewolf:
                 if seer.number == self.human_player_index+1 and not self.speech:
                     self.current_player_index = seer.number - 1
                     return False
-                target = seer.requestVote("当前第{self.day}天,请选择要查验的玩家", valid_targets=[p.number for p in self.players if p.alive and p.number != seer.number]) if seer.number != self.human_player_index+1 else self.speech
+                target = seer.requestVote(f"当前第{self.day}天,请选择要查验的玩家", valid_targets=[p.number for p in self.players if p.alive and p.number != seer.number]) if seer.number != self.human_player_index+1 else self.speech
                 self.speech = None
                 if target:
                     role_info = self.get_player(int(target)).role

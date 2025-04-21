@@ -8,7 +8,10 @@ from kirara_ai.logger import get_logger
 from kirara_ai.ioc.container import DependencyContainer
 from kirara_ai.llm.llm_manager import LLMManager
 from kirara_ai.llm.llm_registry import LLMAbility
-import threading  # 新增导入
+import threading
+import json
+import os
+import pickle
 
 logger = get_logger("GameWerewolf")
 
@@ -48,50 +51,99 @@ class GameWerewolfBlock(Block):
         self.model_name = model_name
         self.segment_messages = segment_messages
         self.logger = logger
+        # 修改存储路径到当前文件所在目录
+        self.storage_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'game_saves')
+        os.makedirs(self.storage_dir, exist_ok=True)
+        self.load_games()
+
+    def get_storage_path(self, group_id):
+        """获取特定游戏实例的存储路径"""
+        return os.path.join(self.storage_dir, f'game_{group_id}.pkl')
+
+    def save_game(self, group_id, game):
+        """保存游戏实例到文件"""
+        try:
+            storage_path = self.get_storage_path(group_id)
+            # 临时移除不可序列化的属性
+            temp_llm = game.llm
+            temp_locks = game.lock
+            game.llm = None
+            game.lock = None
+            
+            # 保存游戏状态
+            with open(storage_path, 'wb') as f:
+                pickle.dump(game, f)
+            
+            # 恢复属性
+            game.llm = temp_llm
+            game.lock = temp_locks
+        except Exception as e:
+            self.logger.error(f"Error saving game state: {e}")
+
+    def load_games(self):
+        """加载所有保存的游戏实例"""
+        try:
+            for filename in os.listdir(self.storage_dir):
+                if filename.startswith('game_') and filename.endswith('.pkl'):
+                    group_id = filename[5:-4]  # 提取group_id
+                    storage_path = os.path.join(self.storage_dir, filename)
+                    try:
+                        with open(storage_path, 'rb') as f:
+                            game = pickle.load(f)
+                            game.lock = threading.Lock()  # 重新创建锁
+                            self.game_instances[group_id] = game
+                    except Exception as e:
+                        self.logger.error(f"Error loading game {filename}: {e}")
+                        # 如果加载失败，删除损坏的存档
+                        os.remove(storage_path)
+        except Exception as e:
+            self.logger.error(f"Error loading games: {e}")
 
     def execute(self, **kwargs) -> Dict[str, Any]:
         speech = kwargs.get("speech", "").lstrip().strip()
         sender = kwargs.get("sender")
         group_id = sender.group_id if sender.group_id else sender.user_id  # 获取 group_id 或 user_id
         llm_manager = self.container.resolve(LLMManager)
-        model_id = self.model_name
+        model_id = self.model_name or llm_manager.get_llm_id_by_ability(LLMAbility.TextChat)
         if not model_id:
-            model_id = llm_manager.get_llm_id_by_ability(LLMAbility.TextChat)
-            if not model_id:
-                raise ValueError("No available LLM models found")
-            else:
-                self.logger.info(
-                    f"Model id unspecified, using default model: {model_id}"
-                )
-        else:
-            self.logger.debug(f"Using specified model: {model_id}")
-
+            raise ValueError("No available LLM models found")
+        
         llm = llm_manager.get_llm(model_id)
         # 获取或创建 GameWerewolf 实例
         if group_id not in self.game_instances:
-            self.game_instances[group_id] = GameWerewolf(self.werewolf_count,self.willager_count, llm,model_id)  # 创建新实例
-            self.game_instances[group_id].lock = threading.Lock()  # 为每个实例添加锁
+            game = GameWerewolf(self.werewolf_count, self.willager_count, llm, model_id)
+            game.lock = threading.Lock()
+            self.game_instances[group_id] = game
 
-        # 使用现有实例
         game = self.game_instances[group_id]
+        game.llm = llm  # 确保每次都更新 llm 实例
 
         message_elements = []
         try:
-            if not game.lock.acquire(blocking=False):  # 尝试获取锁，不阻塞
-                result = "游戏正在进行中"  # 如果锁被占用，返回相应消息
+            if not game.lock.acquire(blocking=False):
+                result = "游戏正在进行中"
             else:
                 try:
                     result = game.play(speech, llm, self.model_name)
+                    # 保存游戏状态
+                    self.save_game(group_id, game)
                 finally:
-                    game.lock.release()  # 确保释放锁
+                    game.lock.release()
 
             if self.segment_messages and isinstance(result, str):
-                # 按换行符分割消息并逐个添加
                 for segment in result.split('\n#'):
-                    if segment.strip():  # 只添加非空消息
+                    if segment.strip():
                         message_elements.append(TextMessage(segment.strip()))
             else:
                 message_elements.append(TextMessage(result))
+
+            # 如果游戏结束，删除存档
+            if isinstance(result, str) and ("胜利" in result):
+                storage_path = self.get_storage_path(group_id)
+                if os.path.exists(storage_path):
+                    os.remove(storage_path)
+                del self.game_instances[group_id]
+
             return {"message": IMMessage(sender=ChatSender.get_bot_sender(), message_elements=message_elements)}
         except Exception as e:
             self.logger.error(str(e))
