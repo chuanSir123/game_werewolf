@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 import io
 import os
 
-version = os.environ.get('RELEASE_VERSION', '0.3.2'
+version = os.environ.get('RELEASE_VERSION', '0.3.5'
 '').lstrip('v')
 
 setup(
@@ -14,7 +14,8 @@ setup(
         "game_werewolf": ["example/*.yaml", "example/*.yml"],
     },
     install_requires=[
-        "kirara-ai>=3.2.0",
+        "kirara-ai>3.2.0",
+        "beautifulsoup4"
     ],
     entry_points={
         'chatgpt_mirai.plugins': [

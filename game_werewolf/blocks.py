@@ -7,7 +7,7 @@ import asyncio
 from kirara_ai.logger import get_logger
 from kirara_ai.ioc.container import DependencyContainer
 from kirara_ai.llm.llm_manager import LLMManager
-from kirara_ai.llm.llm_registry import LLMAbility
+from kirara_ai.llm.model_types import LLMAbility, ModelType
 import threading
 import json
 import os
@@ -17,7 +17,7 @@ logger = get_logger("GameWerewolf")
 
 def model_name_options_provider(container: DependencyContainer, block: Block) -> List[str]:
     llm_manager: LLMManager = container.resolve(LLMManager)
-    return llm_manager.get_supported_models(LLMAbility.TextChat)
+    return llm_manager.get_supported_models(ModelType.LLM, LLMAbility.TextChat)
 
 class GameWerewolfBlock(Block):
     """音乐搜索Block"""
@@ -69,11 +69,11 @@ class GameWerewolfBlock(Block):
             temp_locks = game.lock
             game.llm = None
             game.lock = None
-            
+
             # 保存游戏状态
             with open(storage_path, 'wb') as f:
                 pickle.dump(game, f)
-            
+
             # 恢复属性
             game.llm = temp_llm
             game.lock = temp_locks
@@ -107,7 +107,7 @@ class GameWerewolfBlock(Block):
         model_id = self.model_name or llm_manager.get_llm_id_by_ability(LLMAbility.TextChat)
         if not model_id:
             raise ValueError("No available LLM models found")
-        
+
         llm = llm_manager.get_llm(model_id)
         # 获取或创建 GameWerewolf 实例
         if group_id not in self.game_instances:

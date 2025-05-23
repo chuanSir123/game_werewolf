@@ -160,13 +160,13 @@ class GameWerewolf:
             raise ValueError("角色分配失败：村民数量不足")
 
         roles = (
-                [Role.WEREWOLF] * werewolf_count +
-                special_roles +
-                [Role.VILLAGER] * villager_count
+            [Role.WEREWOLF] * werewolf_count +
+            special_roles +
+            [Role.VILLAGER] * villager_count
         )
         random.shuffle(roles)
         roleNames = [f"{werewolf_count}{Role.WEREWOLF._value_}",f"{villager_count}{Role.VILLAGER._value_}"
-            ,f"1{Role.SEER._value_}",f"1{Role.WITCH._value_}",f"1{Role.GUARD._value_}"]
+        ,f"1{Role.SEER._value_}",f"1{Role.WITCH._value_}",f"1{Role.GUARD._value_}"]
 
         werewolves = []  # 用于存储狼的编号
         for i, player in enumerate(self.players):
